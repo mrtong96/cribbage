@@ -20,7 +20,7 @@ def is_hand_flush(hand):
 def score_flush(starter_card, hand, is_crib):
     if is_hand_flush(hand):
         starter_suit = (starter_card >> 4)
-        if starter_suit == hand_suits[0]:
+        if starter_suit == hand[0] >> 4:
             return SCORE_DTYPE(5)
         elif not is_crib:
             return SCORE_DTYPE(4)
@@ -99,10 +99,41 @@ def score_pairs(rank_counts):
             pair_score += (rank_count) * (rank_count - 1)
     return pair_score
 
+# while playing we should be able to score runs
 @jit(nopython=True)
-def score_nob(starter_card, hand):
+def score_play_run(cards):
+    for start_card_index in range(cards.shape[0] - 2):
+        total_cards = cards.shape[0] - start_card_index
+        values = cards = sorted(set(removed_cards[start_card_index:] & 0xF))
+        if len(values) == total_cards and max(values) - min(values) == total_cards:
+            return np.int8(total_cards)
+    return np.int8(0)
+
+@jit(nopython=True)
+def score_play_pairs(cards):
+    card_values = cards & 0xF
+    for neg_num_cards in range(-4, -1):
+        num_cards = neg_num_cards * -1
+        if len(set(card_values[neg_num_cards:])) == 1:
+            # 2->2, 3->6, 4->12
+            return np.int8(num_cards * (num_cards - 1))
+    return np.int8(0)
+
+@jit(nopython=True)
+def score_play_values(cards):
+    total_values = np.sum([card.get_value(cur_card) for cur_card in cards])
+    if total_values == 15:
+        return np.int8(2)
+    elif total_values == 31:
+        return np.int8(2)
+    else:
+        return np.int8(0)a
+        
+
+@jit(nopython=True)
+def score_nob(starter_card, hand):    
     # if the jack is in the hand in the right suit
-    if (starter_card & 0xF) | 0xA in hand:
+    if (starter_card & 0xF0) | 0xA in hand:
         return SCORE_DTYPE(1)
     return SCORE_DTYPE(0)
 
@@ -148,8 +179,9 @@ def compute_non_suit_score(scoring_card_ranks, starter_card_rank):
         rank_counts[rank] += 1
 
     values = np.zeros(5, dtype=np.int8)
-    values[0] = starter_card_rank
-    values[1:] = scoring_card_ranks
+    for i, scoring_card_rank in enumerate(scoring_card_ranks):
+        values[i] = card.get_value(scoring_card_rank)
+    values[4] = card.get_value(starter_card_rank)
 
     total = SCORE_DTYPE(0)
     total += score_fifteens(values)
@@ -208,6 +240,7 @@ def compute_expected_value(hand, is_crib, possible_starter_ranks, possible_start
         (sorted_hand_ranks[2] << 4) |
         (sorted_hand_ranks[3])
     )
+
     # see if we have a 4 of a kind
     skip_rank = -1
     if sorted_hand_ranks[0] == sorted_hand_ranks[1] == sorted_hand_ranks[2] == sorted_hand_ranks[3]:
@@ -217,7 +250,7 @@ def compute_expected_value(hand, is_crib, possible_starter_ranks, possible_start
         if card_rank != skip_rank:
             rank_score = scoring_rank_int_to_suitless_score[(card_rank << 16) | hand_rank_int_base]
             running_total += possible_starter_ranks[card_rank] * rank_score
-
+    
     # nob scoring for the hand
     for hand_card in hand:
         # if we have a jack
@@ -225,6 +258,7 @@ def compute_expected_value(hand, is_crib, possible_starter_ranks, possible_start
             # figure out how many possible starter cards have the same matching suit
             running_total += possible_starter_suits[hand_card >> 4]
 
+    
     # flush scoring for the hand
     if hand_is_flush:
         hand_suit = hand[0] >> 4        

@@ -22,7 +22,7 @@ def inplace_sort(arr):
                 arr[j] = tmp
     return arr
 
-def get_ranks(rank_array):
+def get_ranks(rank_array: list[int]):
 	return [rank - i for i, rank in enumerate(rank_array)]
 
 def compute_rank_array_values(num_cards):
@@ -104,14 +104,16 @@ def get_discard_int(card1, card2):
 
     lower_rank = min(rank1, rank2)
     higher_rank = max(rank1, rank2)
-    suits_match = 1 if suit1 == suit2 else 0
 
-    result = np.int32(0)
-    result |= suits_match << 8
-    result |= higher_rank << 4
-    result |= lower_rank
-    
-    return result
+    # pairs, 0, 14, 
+    if lower_rank == higher_rank:
+        return lower_rank * 14
+    # suited
+    elif suit1 == suit2:
+        return lower_rank * 13 + higher_rank
+    # off-suited
+    else:
+        return higher_rank * 13 + lower_rank
 
 discard_int_to_index = Dict.empty(
     key_type=types.int32,
